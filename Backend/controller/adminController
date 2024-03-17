@@ -1,0 +1,75 @@
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+const dotenv = require("dotenv");
+const AdminSchema = require('../models/Admin');
+const Member = require('../models/Members');
+dotenv.config();
+const SecretKey = process.env.SecretKey;
+
+console.log(SecretKey); 
+
+
+const adminSignup = async (req, res) => {
+    const { password, email } = req.body;
+
+    try {
+        if (!password || !email) {
+            return res.status(400).json({ message: 'Please provide password and email' });
+        }
+
+        const existingAdmin = await AdminSchema.findOne({ email });
+        if (existingAdmin) {
+            return res.status(400).json({ message: 'Admin already exists' });
+        }
+
+        const isMember = await Member.isValidEmail(email);
+        if (!isMember) {
+            return res.status(403).json({ message: 'Signup restricted to members only' });
+        }
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        const newAdmin = new AdminSchema({ password: hashedPassword, email });
+        await newAdmin.save();
+
+        const token = jwt.sign({ adminId: newAdmin.email}, SecretKey, { expiresIn: '1h' });
+    
+        res.status(201).json({ message: 'Admin created successfully', token });
+    } catch (error) {
+        console.error('Signup error:', error);
+        res.status(400).json({ message: 'Invalid data provided' });
+    }
+};
+
+const adminLogin = async (req, res) => {
+    const { email, password } = req.body;
+
+    console.log(email) ; 
+    console.log(password) ; 
+
+    try {
+        if (!email || !password) {
+            return res.status(400).json({ message: 'Please provide email and password' });
+        }
+
+        const admin = await AdminSchema.findOne({ email });
+        if (!admin) {
+            return res.status(401).json({ message: 'Invalid credentials' });
+        }
+
+        const isPasswordValid = await bcrypt.compare(password, admin.password);
+        if (!isPasswordValid) {
+            return res.status(401).json({ message: 'Invalid credentials' });
+        }
+
+        const token = jwt.sign({ adminId: admin._id , email : admin.email }, SecretKey , { expiresIn: '1h' });
+
+        
+        res.status(200).json({ message: 'Login successful', token });
+    } catch (error) {
+        console.error('Login error:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+};
+
+module.exports = { adminSignup , adminLogin };
